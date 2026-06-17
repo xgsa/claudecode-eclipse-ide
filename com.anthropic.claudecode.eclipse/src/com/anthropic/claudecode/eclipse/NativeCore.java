@@ -297,11 +297,6 @@ public final class NativeCore {
      */
     public static native void browserActivateInput(long hwnd);
 
-    public static native boolean bridgeConnect(int port);
-    public static native void bridgeDisconnect();
-    public static native boolean bridgeIsConnected();
-    public static native boolean bridgeSend(String data);
-
     // ── Proxy configuration ──────────────────────────────────────────────────
 
     /**

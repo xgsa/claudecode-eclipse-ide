@@ -24,8 +24,6 @@ import org.eclipse.ui.part.ViewPart;
 
 import com.anthropic.claudecode.eclipse.Activator;
 import com.anthropic.claudecode.eclipse.Constants;
-import com.anthropic.claudecode.eclipse.NativeCore;
-import com.anthropic.claudecode.eclipse.bridge.PhpBridge;
 import com.anthropic.claudecode.eclipse.editor.UiHelper;
 
 public class ClaudeCodeView extends ViewPart {
@@ -37,19 +35,15 @@ public class ClaudeCodeView extends ViewPart {
     private StyledText logArea;
     private Label serverIndicator;
     private Label serverLabel;
-    private Label bridgeIndicator;
-    private Label bridgeLabel;
     private Button launchButton;
     private ScheduledExecutorService statusPoller;
     private volatile boolean launching = false;
-    private PhpBridge phpBridge;
 
     private Image greenLight;
     private Image yellowLight;
     private Image redLight;
-    private Image blueLight;
 
-    private enum Status { GREEN, YELLOW, RED, BLUE }
+    private enum Status { GREEN, YELLOW, RED }
 
     @Override
     public void createPartControl(Composite parent) {
@@ -83,8 +77,6 @@ public class ClaudeCodeView extends ViewPart {
             appendLog("Lock file: ~/.claude/ide/" + port + ".lock\n\n");
         }
 
-        startPhpBridge();
-        logBridgeInfo();
         appendLog("Click 'Launch Claude Terminal' to open the Claude CLI.\n\n");
 
         updateStatus();
@@ -105,9 +97,6 @@ public class ClaudeCodeView extends ViewPart {
         redLight = createBoxImage(display,
             new Color(display, 244, 67, 54),
             new Color(display, 198, 40, 40));
-        blueLight = createBoxImage(display,
-            new Color(display, 33, 150, 243),
-            new Color(display, 25, 118, 210));
     }
 
     private Image createBoxImage(Display display, Color fill, Color border) {
@@ -148,21 +137,6 @@ public class ClaudeCodeView extends ViewPart {
 
         serverLabel = new Label(serverGroup, SWT.NONE);
         serverLabel.setText("Server: --");
-
-        // Bridge status group
-        Composite bridgeGroup = new Composite(statusBar, SWT.NONE);
-        RowLayout bridgeLayout = new RowLayout(SWT.HORIZONTAL);
-        bridgeLayout.marginWidth = 0;
-        bridgeLayout.marginHeight = 0;
-        bridgeLayout.spacing = 4;
-        bridgeLayout.center = true;
-        bridgeGroup.setLayout(bridgeLayout);
-
-        bridgeIndicator = new Label(bridgeGroup, SWT.NONE);
-        bridgeIndicator.setImage(redLight);
-
-        bridgeLabel = new Label(bridgeGroup, SWT.NONE);
-        bridgeLabel.setText("Bridge: --");
     }
 
     private void createButtonRow(Composite parent) {
@@ -211,7 +185,6 @@ public class ClaudeCodeView extends ViewPart {
 
     private void restartServer() {
         setServerStatus(Status.YELLOW, "Restarting...");
-        setBridgeStatus(Status.YELLOW, "Reconnecting...");
         Display.getCurrent().update();
 
         Display.getCurrent().asyncExec(() -> {
@@ -222,12 +195,6 @@ public class ClaudeCodeView extends ViewPart {
             appendLog("New token: " + newToken.substring(0, 8) + "...\n");
             appendLog("Lock file updated: ~/.claude/ide/" + newPort + ".lock\n");
 
-            if (phpBridge != null) {
-                NativeCore.bridgeDisconnect();
-                phpBridge.stop();
-            }
-            startPhpBridge();
-            logBridgeInfo();
             updateStatus();
 
             // Restart all CLI sessions so they reconnect with new MCP credentials
@@ -270,52 +237,6 @@ public class ClaudeCodeView extends ViewPart {
         startClaude(extraArgs);
     }
 
-    // Show bridge info for Windows/Linux, or override message for macOS
-    private void logBridgeInfo() {
-        if (phpBridge != null && phpBridge.isOverridden()) {
-            appendLog("macOS detected, direct protocol active.\n\n");
-        } else if (phpBridge != null && phpBridge.isRunning()) {
-            String phpMsg = phpBridge.getPhpMessage();
-            if (phpMsg != null && !phpMsg.isEmpty()) {
-                appendLog(phpMsg + "\n");
-            }
-            appendLog("Bridge relay ports: " + phpBridge.getPortA() + " ↔ " + phpBridge.getPortB() + "\n\n");
-        }
-    }
-
-    private void startPhpBridge() {
-        phpBridge = new PhpBridge();
-        boolean started = phpBridge.start(data -> {
-            if (isDebugMode()) {
-                String msg = new String(data, java.nio.charset.StandardCharsets.UTF_8);
-                Display.getDefault().asyncExec(() -> appendLog("[BRIDGE] " + msg));
-            }
-        });
-
-        if (started) {
-            if (isDebugMode()) {
-                appendLog("Bridge started on port " + phpBridge.getPortA() + "\n");
-            }
-            boolean connected = NativeCore.bridgeConnect(phpBridge.getPortA());
-            if (isDebugMode()) {
-                if (connected) {
-                    appendLog("Rust connected to Bridge.\n\n");
-                } else {
-                    appendLog("[WARN] Rust failed to connect to Bridge.\n\n");
-                }
-            }
-        } else {
-            if (isDebugMode()) {
-                appendLog("[WARN] Bridge failed to start.\n\n");
-            }
-        }
-    }
-
-    private boolean isDebugMode() {
-        IPreferenceStore store = Activator.getDefault().getPreferenceStore();
-        return store.getBoolean(Constants.PREF_DEBUG_MODE);
-    }
-
     private boolean isAutoLaunchEnabled() {
         IPreferenceStore store = Activator.getDefault().getPreferenceStore();
         return store.getBoolean(Constants.PREF_AUTO_LAUNCH_CLI);
@@ -338,17 +259,10 @@ public class ClaudeCodeView extends ViewPart {
         serverLabel.setText("Server: " + text);
     }
 
-    private void setBridgeStatus(Status status, String text) {
-        if (bridgeIndicator == null || bridgeIndicator.isDisposed()) return;
-        bridgeIndicator.setImage(getStatusImage(status));
-        bridgeLabel.setText("Bridge: " + text);
-    }
-
     private Image getStatusImage(Status status) {
         switch (status) {
             case GREEN: return greenLight;
             case YELLOW: return yellowLight;
-            case BLUE: return blueLight;
             default: return redLight;
         }
     }
@@ -368,18 +282,6 @@ public class ClaudeCodeView extends ViewPart {
             }
         } else {
             setServerStatus(Status.RED, "Stopped");
-        }
-
-        if (phpBridge != null && phpBridge.isOverridden()) {
-            setBridgeStatus(Status.BLUE, "Overridden");
-        } else if (phpBridge != null && phpBridge.isRunning()) {
-            if (NativeCore.bridgeIsConnected()) {
-                setBridgeStatus(Status.GREEN, "Connected");
-            } else {
-                setBridgeStatus(Status.YELLOW, "Running");
-            }
-        } else {
-            setBridgeStatus(Status.RED, "Off");
         }
     }
 
@@ -406,14 +308,9 @@ public class ClaudeCodeView extends ViewPart {
         if (statusPoller != null) {
             statusPoller.shutdownNow();
         }
-        if (phpBridge != null) {
-            NativeCore.bridgeDisconnect();
-            phpBridge.stop();
-        }
         if (greenLight != null && !greenLight.isDisposed()) greenLight.dispose();
         if (yellowLight != null && !yellowLight.isDisposed()) yellowLight.dispose();
         if (redLight != null && !redLight.isDisposed()) redLight.dispose();
-        if (blueLight != null && !blueLight.isDisposed()) blueLight.dispose();
         super.dispose();
     }
 }

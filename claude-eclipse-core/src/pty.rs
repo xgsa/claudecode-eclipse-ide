@@ -153,12 +153,6 @@ impl PtySession {
                             vterm.process(&buf[..n]);
 
                             if let Some(json) = vterm.screen_to_json() {
-                                // Mirror through PHP bridge if connected
-                                if crate::php_bridge::is_connected() {
-                                    let msg = format!("SCREEN:{}", json);
-                                    crate::php_bridge::send_line(&msg);
-                                }
-                                // Always fire JNI callback
                                 let guard = callbacks.lock().unwrap();
                                 if let Some(cb) = guard.as_ref() {
                                     fire_string(&cb.java_vm, &cb.obj, "onScreenUpdate", &json);

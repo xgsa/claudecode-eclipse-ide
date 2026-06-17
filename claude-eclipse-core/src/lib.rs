@@ -2,7 +2,6 @@ mod chat;
 mod console;
 mod lock_file;
 mod mcp;
-mod php_bridge;
 mod pty;
 mod server;
 mod shell_env;
@@ -643,45 +642,6 @@ pub extern "system" fn Java_com_anthropic_claudecode_eclipse_NativeCore_browserA
     }
     #[cfg(not(windows))]
     let _ = hwnd;
-}
-
-// ===========================================================================
-// PHP Bridge JNI entry points
-// ===========================================================================
-
-#[no_mangle]
-pub extern "system" fn Java_com_anthropic_claudecode_eclipse_NativeCore_bridgeConnect(
-    _env: JNIEnv,
-    _class: JClass,
-    port: jint,
-) -> jboolean {
-    php_bridge::connect(port as u16) as jboolean
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_anthropic_claudecode_eclipse_NativeCore_bridgeDisconnect(
-    _env: JNIEnv,
-    _class: JClass,
-) {
-    php_bridge::disconnect();
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_anthropic_claudecode_eclipse_NativeCore_bridgeIsConnected(
-    _env: JNIEnv,
-    _class: JClass,
-) -> jboolean {
-    php_bridge::is_connected() as jboolean
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_anthropic_claudecode_eclipse_NativeCore_bridgeSend(
-    mut env: JNIEnv,
-    _class: JClass,
-    data: JString,
-) -> jboolean {
-    let s: String = env.get_string(&data).map(|js| js.into()).unwrap_or_default();
-    php_bridge::send_str(&s) as jboolean
 }
 
 // ===========================================================================
